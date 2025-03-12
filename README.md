@@ -54,3 +54,8 @@ payload文件格式可参考`template`目录下的`http.black`（黑样本以bla
 
 ### 4. 报告结果
 测试结果会汇聚到`result`目录下。
+
+
+## 四、项目参考（基于下面的开源项目增加了结果汇聚功能）
+
+[blazehttp](https://github.com/chaitin/blazehttp)
