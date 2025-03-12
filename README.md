@@ -45,7 +45,7 @@ http_replay_testting/
 ### 2. 运行项目
 
 ```
-./http_replay_testting -t http://10.10.121.18 -p payload_file
+./build/http_replay_testting -t http://10.10.121.18 -p payload_file
 ```
 `-t` 为目标地址，`-p` 为payload文件路径。
 
