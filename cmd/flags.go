@@ -14,6 +14,7 @@ var (
 	concurrent          = 10   // default 10 concurrent workers
 	mHost               string // modify host header
 	requestPerSession   bool   // send request per session
+	isReport            bool
 )
 
 func Init() {
@@ -27,6 +28,7 @@ func Init() {
 	flag.IntVar(&timeOut, "timeout", 1000, "connection timeout, default 1000 ms")
 	flag.StringVar(&mHost, "H", "", "modify host header")
 	flag.BoolVar(&requestPerSession, "rps", true, "send request per session")
+	flag.BoolVar(&isReport, "o", true, "report result")
 	flag.Parse()
 	if url, err := url.Parse(target); err != nil || url.Scheme == "" || url.Host == "" {
 		fmt.Println("invalid target url, example: http://www.a.com")

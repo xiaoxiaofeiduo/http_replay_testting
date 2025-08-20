@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/schollz/progressbar/v3"
 	"http_replay_testting/utils"
 	"http_replay_testting/worker"
 	"net/url"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 func main() {
@@ -76,6 +77,7 @@ func main() {
 		isHttps,
 		fileList,
 		blockStatusCode,
+		isReport,
 		worker.WithConcurrence(concurrent),
 		worker.WithReqHost(mHost),
 		worker.WithReqPerSession(requestPerSession),

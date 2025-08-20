@@ -53,7 +53,7 @@ http_replay_testting/
 payload文件格式可参考`template`目录下的`http.black`（黑样本以black为文件后缀）和`http.white`（非black文件后缀的都为白样本）文件。
 
 ### 4. 报告结果
-测试结果会汇聚到`result`目录下。
+测试结果会汇聚到`result`目录下，报告文件为`report.html`。
 
 
 ## 四、项目参考（基于下面的开源项目增加了结果汇聚功能）

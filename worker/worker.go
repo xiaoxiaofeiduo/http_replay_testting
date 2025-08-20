@@ -40,6 +40,7 @@ type Worker struct {
 	reqPerSession   bool   // request per session
 	useEmbedFS      bool
 	resultCh        chan *Result
+	isReport        bool
 }
 
 type WorkerOption func(*Worker)
@@ -95,6 +96,7 @@ func NewWorker(
 	isHttps bool,
 	fileList []string,
 	blockStatusCode int,
+	isReport bool,
 	options ...WorkerOption,
 ) *Worker {
 	w := &Worker{
@@ -108,6 +110,7 @@ func NewWorker(
 		isHttps:         isHttps,
 		timeout:         1000, // 1000ms
 		blockStatusCode: blockStatusCode,
+		isReport:        isReport,
 
 		jobs:          make(chan *Job),
 		jobResult:     make(chan *Job),
@@ -290,6 +293,21 @@ func copyFilesFromList(fileListPath, targetDir string) error {
 	return nil
 }
 
+// getFilesInDirectory 获取目录中的所有文件名
+func getFilesInDirectory(dirPath string) ([]string, error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			files = append(files, entry.Name())
+		}
+	}
+	return files, nil
+}
+
 /*样本归档代码*/
 
 func (w *Worker) Run() {
@@ -372,6 +390,16 @@ func (w *Worker) Run() {
 
 	/*样本归档代码*/
 	fmt.Println(w.generateResult())
+
+	// 生成并保存HTML报告
+	if w.isReport {
+		htmlReport := w.generateHTMLReport(resultDir)
+		err = ioutil.WriteFile(resultDir+"report.html", []byte(htmlReport), 0644)
+		if err != nil {
+			log.Fatalf("生成HTML报告失败: %v", err)
+		}
+		fmt.Printf("HTML报告已保存至: %sreport.html\n", resultDir)
+	}
 }
 
 func (w *Worker) runWorker() {
@@ -513,5 +541,319 @@ func (w *Worker) generateResult() string {
 	sb.WriteString(fmt.Sprintf("误报率: %.2f%% (正常样本总数: %d , 正确放行: %d , 误报拦截: %d)\n", float64(w.result.FP)*100/float64(w.result.TN+w.result.FP), w.result.TN+w.result.FP, w.result.TN, w.result.FP))
 	sb.WriteString(fmt.Sprintf("准确率: %.2f%% (正确拦截 + 正确放行）/样本总数 \n", float64(w.result.TP+w.result.TN)*100/float64(w.result.TP+w.result.TN+w.result.FP+w.result.FN)))
 	sb.WriteString(fmt.Sprintf("平均耗时: %.2f毫秒\n", float64(w.result.SuccessTimeCost)/float64(w.result.Success)/1000000))
+	return sb.String()
+}
+
+// 新增HTML报告生成方法
+func (w *Worker) generateHTMLReport(resultDir string) string {
+	sb := strings.Builder{}
+	sb.WriteString(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>样本回放测试报告</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 30px; }
+        h2 { color: #3498db; margin-top: 30px; }
+        .section { margin: 30px 0; padding: 20px; background-color: #f9f9f9; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stats-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }
+        .stat-card { background-color: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-title { font-size: 0.9em; color: #7f8c8d; margin-bottom: 5px; }
+        .stat-value { font-size: 1.8em; font-weight: bold; color: #2c3e50; }
+        .stat-value.high { color: #27ae60; }
+        .stat-value.medium { color: #f39c12; }
+        .stat-value.low { color: #e74c3c; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 15px; text-align: left; }
+        th { background-color: #3498db; color: white; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        tr:hover { background-color: #e9ecef; }
+        .highlight-good { color: #27ae60; font-weight: bold; }
+        .highlight-bad { color: #e74c3c; font-weight: bold; }
+        .total-row { background-color: #e3f2fd; font-weight: bold; }
+        .sample-list { padding-left: 20px; }
+        .sample-category { margin: 20px 0; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+        .category-header { background-color: #f1f1f1; padding: 10px 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .category-header h3 { margin: 0; font-size: 1.1em; }
+        .category-content { padding: 0 15px; max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out, padding 0.3s ease-out; }
+        .category-content.active { padding: 15px; max-height: 500px; overflow-y: auto; }
+        .toggle-icon { transition: transform 0.3s ease; }
+        .category-header.active .toggle-icon { transform: rotate(180deg); }
+    </style>
+</head>
+<body>
+`)
+	sb.WriteString(fmt.Sprintf("    <h1>样本回放测试报告 - %s</h1>\n", time.Now().Format("2006-01-02 15:04:05")))
+
+	// 添加统计概览
+	sb.WriteString(`    <div class="section">
+        <h2>统计概览</h2>
+        <div class="stats-container">
+`)
+	// 总样本数量
+	sb.WriteString(fmt.Sprintf(`            <div class="stat-card">
+                <div class="stat-title">总样本数量</div>
+                <div class="stat-value">%d</div>
+            </div>
+`, w.result.Total))
+	// 成功数量
+	sb.WriteString(fmt.Sprintf(`            <div class="stat-card">
+                <div class="stat-title">成功数量</div>
+                <div class="stat-value high">%d</div>
+            </div>
+`, w.result.Success))
+	// 错误数量
+	sb.WriteString(fmt.Sprintf(`            <div class="stat-card">
+                <div class="stat-title">错误数量</div>
+                <div class="stat-value low">%d</div>
+            </div>
+`, w.result.Error))
+	// 检出率
+	detectionRate := float64(w.result.TP) * 100 / float64(w.result.TP+w.result.FN)
+	rateClass := "medium"
+	if detectionRate >= 90 {
+		rateClass = "high"
+	} else if detectionRate <= 60 {
+		rateClass = "low"
+	}
+	sb.WriteString(fmt.Sprintf(`            <div class="stat-card">
+                <div class="stat-title">检出率</div>
+                <div class="stat-value %s">%.2f%%</div>
+            </div>
+`, rateClass, detectionRate))
+	// 误报率
+	fpRate := float64(w.result.FP) * 100 / float64(w.result.TN+w.result.FP)
+	fpClass := "high"
+	if fpRate <= 5 {
+		fpClass = "high"
+	} else if fpRate <= 15 {
+		fpClass = "medium"
+	} else {
+		fpClass = "low"
+	}
+	sb.WriteString(fmt.Sprintf(`            <div class="stat-card">
+                <div class="stat-title">误报率</div>
+                <div class="stat-value %s">%.2f%%</div>
+            </div>
+`, fpClass, fpRate))
+	// 准确率
+	accuracy := float64(w.result.TP+w.result.TN) * 100 / float64(w.result.TP+w.result.TN+w.result.FP+w.result.FN)
+	accClass := "medium"
+	if accuracy >= 90 {
+		accClass = "high"
+	} else if accuracy <= 70 {
+		accClass = "low"
+	}
+	sb.WriteString(fmt.Sprintf(`            <div class="stat-card">
+                <div class="stat-title">准确率</div>
+                <div class="stat-value %s">%.2f%%</div>
+            </div>
+`, accClass, accuracy))
+	// 平均耗时
+	avgTime := float64(w.result.SuccessTimeCost) / float64(w.result.Success) / 1000000
+	sb.WriteString(fmt.Sprintf(`            <div class="stat-card">
+                <div class="stat-title">平均耗时</div>
+                <div class="stat-value">%.2f毫秒</div>
+            </div>
+`, avgTime))
+	sb.WriteString(`        </div>
+    </div>
+`)
+
+	// 添加详细统计表格
+	sb.WriteString(`    <div class="section">
+        <h2>详细统计</h2>
+        <table>
+            <tr>
+                <th>类别</th>
+                <th>总数</th>
+                <th>正确</th>
+                <th>正确比例</th>
+                <th>错误</th>
+                <th>错误比例</th>
+            </tr>
+`)
+
+	// 计算恶意样本统计数据
+	totalMalicious := w.result.TP + w.result.FN
+	maliciousCorrectRate := 0.0
+	maliciousErrorRate := 0.0
+	if totalMalicious > 0 {
+		maliciousCorrectRate = float64(w.result.TP) / float64(totalMalicious) * 100
+		maliciousErrorRate = float64(w.result.FN) / float64(totalMalicious) * 100
+	}
+
+	// 计算正常样本统计数据
+	totalNormal := w.result.TN + w.result.FP
+	normalCorrectRate := 0.0
+	normalErrorRate := 0.0
+	if totalNormal > 0 {
+		normalCorrectRate = float64(w.result.TN) / float64(totalNormal) * 100
+		normalErrorRate = float64(w.result.FP) / float64(totalNormal) * 100
+	}
+
+	// 计算总计数据
+	totalSamples := totalMalicious + totalNormal
+	totalCorrect := w.result.TP + w.result.TN
+	totalError := w.result.FN + w.result.FP
+	totalCorrectRate := 0.0
+	totalErrorRate := 0.0
+	if totalSamples > 0 {
+		totalCorrectRate = float64(totalCorrect) / float64(totalSamples) * 100
+		totalErrorRate = float64(totalError) / float64(totalSamples) * 100
+	}
+
+	// 添加恶意样本行
+	sb.WriteString(fmt.Sprintf(`            <tr>
+                <td>攻击样本</td>
+                <td>%d</td>
+                <td class="highlight-good">%d (拦截)</td>
+                <td class="highlight-good">%.2f%%</td>
+                <td class="highlight-bad">%d (漏报)</td>
+                <td class="highlight-bad">%.2f%%</td>
+            </tr>
+`,
+		totalMalicious, w.result.TP, maliciousCorrectRate, w.result.FN, maliciousErrorRate))
+
+	// 添加正常样本行
+	sb.WriteString(fmt.Sprintf(`            <tr>
+                <td>白样本</td>
+                <td>%d</td>
+                <td class="highlight-good">%d (放行)</td>
+                <td class="highlight-good">%.2f%%</td>
+                <td class="highlight-bad">%d (误报)</td>
+                <td class="highlight-bad">%.2f%%</td>
+            </tr>
+`,
+		totalNormal, w.result.TN, normalCorrectRate, w.result.FP, normalErrorRate))
+
+	// 添加总计行
+	sb.WriteString(fmt.Sprintf(`            <tr class="total-row">
+                <td>总计</td>
+                <td>%d</td>
+                <td>%d</td>
+                <td>%.2f%%</td>
+                <td>%d</td>
+                <td>%.2f%%</td>
+            </tr>
+        </table>
+    </div>
+`,
+		totalSamples, totalCorrect, totalCorrectRate, totalError, totalErrorRate))
+
+	// 添加样本分类链接
+	sb.WriteString(`    <div class="section">
+        <h2>样本文件列表</h2>
+        <p>点击分类标题可展开/折叠文件列表</p>
+`)
+
+	// 误拦截白样本
+	sb.WriteString(`        <div class="sample-category">
+            <div class="category-header" onclick="toggleCategory(this)">
+                <h3>误拦截白样本</h3>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="category-content">
+`)
+	whiteBlockDir := filepath.Join(resultDir, "white_block")
+	whiteBlockFiles, err := getFilesInDirectory(whiteBlockDir)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("            <p>错误: 无法读取目录 %s: %v</p>\n", whiteBlockDir, err))
+	} else if len(whiteBlockFiles) == 0 {
+		sb.WriteString("            <p>无样本文件</p>\n")
+	} else {
+		sb.WriteString("            <ul class=\"sample-list\">\n")
+		for _, file := range whiteBlockFiles {
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"white_block/%s\">%s</a></li>\n", file, file))
+		}
+		sb.WriteString("            </ul>\n")
+	}
+	sb.WriteString("            </div>\n        </div>\n")
+
+	// 正确放行白样本
+	sb.WriteString(`        <div class="sample-category">
+            <div class="category-header" onclick="toggleCategory(this)">
+                <h3>正确放行白样本</h3>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="category-content">
+`)
+	whitePassDir := filepath.Join(resultDir, "white_pass")
+	whitePassFiles, err := getFilesInDirectory(whitePassDir)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("            <p>错误: 无法读取目录 %s: %v</p>\n", whitePassDir, err))
+	} else if len(whitePassFiles) == 0 {
+		sb.WriteString("            <p>无样本文件</p>\n")
+	} else {
+		sb.WriteString("            <ul class=\"sample-list\">\n")
+		for _, file := range whitePassFiles {
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"white_pass/%s\">%s</a></li>\n", file, file))
+		}
+		sb.WriteString("            </ul>\n")
+	}
+	sb.WriteString("            </div>\n        </div>\n")
+
+	// 漏报攻击样本
+	sb.WriteString(`        <div class="sample-category">
+            <div class="category-header" onclick="toggleCategory(this)">
+                <h3>漏报攻击样本</h3>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="category-content">
+`)
+	attackPassDir := filepath.Join(resultDir, "attack_pass")
+	attackPassFiles, err := getFilesInDirectory(attackPassDir)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("            <p>错误: 无法读取目录 %s: %v</p>\n", attackPassDir, err))
+	} else if len(attackPassFiles) == 0 {
+		sb.WriteString("            <p>无样本文件</p>\n")
+	} else {
+		sb.WriteString("            <ul class=\"sample-list\">\n")
+		for _, file := range attackPassFiles {
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"attack_pass/%s\">%s</a></li>\n", file, file))
+		}
+		sb.WriteString("            </ul>\n")
+	}
+	sb.WriteString("            </div>\n        </div>\n")
+
+	// 拦截攻击样本
+	sb.WriteString(`        <div class="sample-category">
+            <div class="category-header" onclick="toggleCategory(this)">
+                <h3>正确拦截攻击样本</h3>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="category-content">
+`)
+	attackBlackDir := filepath.Join(resultDir, "attack_black")
+	attackBlackFiles, err := getFilesInDirectory(attackBlackDir)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("            <p>错误: 无法读取目录 %s: %v</p>\n", attackBlackDir, err))
+	} else if len(attackBlackFiles) == 0 {
+		sb.WriteString("            <p>无样本文件</p>\n")
+	} else {
+		sb.WriteString("            <ul class=\"sample-list\">\n")
+		for _, file := range attackBlackFiles {
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"attack_black/%s\">%s</a></li>\n", file, file))
+		}
+		sb.WriteString("            </ul>\n")
+	}
+	sb.WriteString("            </div>\n        </div>\n    </div>\n")
+
+	sb.WriteString(`    <script>
+		function toggleCategory(element) {
+			const content = element.nextElementSibling;
+			element.classList.toggle('active');
+			content.classList.toggle('active');
+		}
+	</script>
+`)
+	sb.WriteString("        </div>\n")
+
+	sb.WriteString(`    </div>
+</body>
+</html>`)
+
 	return sb.String()
 }
