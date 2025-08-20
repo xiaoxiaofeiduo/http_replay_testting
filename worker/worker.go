@@ -544,7 +544,7 @@ func (w *Worker) generateResult() string {
 	return sb.String()
 }
 
-// 新增HTML报告生成方法
+// HTML报告生成方法
 func (w *Worker) generateHTMLReport(resultDir string) string {
 	sb := strings.Builder{}
 	sb.WriteString(`<!DOCTYPE html>
@@ -766,7 +766,7 @@ func (w *Worker) generateHTMLReport(resultDir string) string {
 	} else {
 		sb.WriteString("            <ul class=\"sample-list\">\n")
 		for _, file := range whiteBlockFiles {
-			sb.WriteString(fmt.Sprintf("                <li><a href=\"white_block/%s\">%s</a></li>\n", file, file))
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"white_block/%s\" target=\"_blank\">%s</a></li>\n", file, file))
 		}
 		sb.WriteString("            </ul>\n")
 	}
@@ -789,7 +789,7 @@ func (w *Worker) generateHTMLReport(resultDir string) string {
 	} else {
 		sb.WriteString("            <ul class=\"sample-list\">\n")
 		for _, file := range whitePassFiles {
-			sb.WriteString(fmt.Sprintf("                <li><a href=\"white_pass/%s\">%s</a></li>\n", file, file))
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"white_pass/%s\" target=\"_blank\">%s</a></li>\n", file, file))
 		}
 		sb.WriteString("            </ul>\n")
 	}
@@ -812,7 +812,7 @@ func (w *Worker) generateHTMLReport(resultDir string) string {
 	} else {
 		sb.WriteString("            <ul class=\"sample-list\">\n")
 		for _, file := range attackPassFiles {
-			sb.WriteString(fmt.Sprintf("                <li><a href=\"attack_pass/%s\">%s</a></li>\n", file, file))
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"attack_pass/%s\" target=\"_blank\">%s</a></li>\n", file, file))
 		}
 		sb.WriteString("            </ul>\n")
 	}
@@ -821,7 +821,7 @@ func (w *Worker) generateHTMLReport(resultDir string) string {
 	// 拦截攻击样本
 	sb.WriteString(`        <div class="sample-category">
             <div class="category-header" onclick="toggleCategory(this)">
-                <h3>正确拦截攻击样本</h3>
+                <h3>拦截攻击样本</h3>
                 <span class="toggle-icon">▼</span>
             </div>
             <div class="category-content">
@@ -835,7 +835,7 @@ func (w *Worker) generateHTMLReport(resultDir string) string {
 	} else {
 		sb.WriteString("            <ul class=\"sample-list\">\n")
 		for _, file := range attackBlackFiles {
-			sb.WriteString(fmt.Sprintf("                <li><a href=\"attack_black/%s\">%s</a></li>\n", file, file))
+			sb.WriteString(fmt.Sprintf("                <li><a href=\"attack_black/%s\" target=\"_blank\">%s</a></li>\n", file, file))
 		}
 		sb.WriteString("            </ul>\n")
 	}
